@@ -1,0 +1,82 @@
+name: Sync DSA Branch to Separate Repo
+
+on:
+  push:
+    branches:
+      - python
+      - javascript
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to sync (javascript, python)'
+        required: true
+        type: choice
+        options:
+          - python
+          - javascript
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine branch to sync
+        id: branch
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            BRANCH="${{ inputs.branch }}"
+          else
+            BRANCH="${{ github.ref_name }}"
+          fi
+          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+          echo "🔍 Syncing branch: $BRANCH"
+
+      - name: Checkout the specific branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.branch.outputs.branch }}
+          fetch-depth: 0
+          token: ${{ secrets.DSA_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Determine target repository
+        id: target
+        run: |
+          BRANCH="${{ steps.branch.outputs.branch }}"
+          echo "Processing branch: $BRANCH"
+
+          case "$BRANCH" in
+            "python")
+              echo "repo=shonjoydev/dsa-python" >> $GITHUB_OUTPUT
+              echo "name=dsa-python" >> $GITHUB_OUTPUT
+              ;;
+            "javascript")
+              echo "repo=shonjoydev/dsa-javascript" >> $GITHUB_OUTPUT
+              echo "name=dsa-javascript" >> $GITHUB_OUTPUT
+              ;;
+            *)
+              echo "❌ Unknown branch: $BRANCH"
+              exit 1
+              ;;
+          esac
+
+      - name: Sync to target repository
+        env:
+          TOKEN: ${{ secrets.DSA_TOKEN }}
+          TARGET_REPO: ${{ steps.target.outputs.repo }}
+          TARGET_NAME: ${{ steps.target.outputs.name }}
+          BRANCH: ${{ steps.branch.outputs.branch }}
+        run: |
+          echo "📤 Syncing $BRANCH to $TARGET_REPO..."
+
+          # Add target repository as remote
+          git remote add target https://x-access-token:${TOKEN}@github.com/${TARGET_REPO}.git
+
+          # Push current branch to main in target repo
+          git push target HEAD:main --force
+
+          echo "✅ Successfully synced $BRANCH to $TARGET_NAME repository"
+          echo "🌐 View at: https://github.com/${TARGET_REPO}"
